@@ -1,8 +1,3 @@
-# CarND-Controls-MPC
-Self-Driving Car Engineer Nanodegree Program
-
----
-
 ## Dependencies
 
 * cmake >= 3.5
@@ -19,7 +14,7 @@ Self-Driving Car Engineer Nanodegree Program
   * Run either `install-mac.sh` or `install-ubuntu.sh`.
   * If you install from source, checkout to commit `e94b6e1`, i.e.
     ```
-    git clone https://github.com/uWebSockets/uWebSockets 
+    git clone https://github.com/uWebSockets/uWebSockets
     cd uWebSockets
     git checkout e94b6e1
     ```
@@ -43,7 +38,7 @@ Self-Driving Car Engineer Nanodegree Program
        per this [forum post](https://discussions.udacity.com/t/incorrect-checksum-for-freed-object/313433/19).
   * Linux
     * You will need a version of Ipopt 3.12.1 or higher. The version available through `apt-get` is 3.11.x. If you can get that version to work great but if not there's a script `install_ipopt.sh` that will install Ipopt. You just need to download the source from the Ipopt [releases page](https://www.coin-or.org/download/source/Ipopt/).
-    * Then call `install_ipopt.sh` with the source directory as the first argument, ex: `sudo bash install_ipopt.sh Ipopt-3.12.1`. 
+    * Then call `install_ipopt.sh` with the source directory as the first argument, ex: `sudo bash install_ipopt.sh Ipopt-3.12.1`.
   * Windows: TODO. If you can use the Linux subsystem and follow the Linux instructions.
 * [CppAD](https://www.coin-or.org/CppAD/)
   * Mac: `brew install cppad`
@@ -128,4 +123,3 @@ still be compilable with cmake and make./
 
 ## How to write a README
 A well written README file can enhance your project and portfolio.  Develop your abilities to create professional README files by completing [this free course](https://www.udacity.com/course/writing-readmes--ud777).
-

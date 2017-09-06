@@ -1,0 +1,113 @@
+#+TITLE: MPC Notes
+#+AUTHOR: Kyung Mo Kweon
+
+* Table of Contents                                                :TOC_2_GH:
+- [[#algorithms][Algorithms]]
+- [[#libraries][Libraries]]
+  - [[#ipopt][Ipopt]]
+  - [[#cppad][CppAd]]
+- [[#code-structure][Code Structure]]
+  - [[#mpcsolve-method][=MPC::Solve= method]]
+  - [[#fg_eval-class][FG_eval class]]
+
+* Algorithms
+- Set =N= and =dt=
+- Fit the polynomial to the way point
+- Calculate initial cross track error (CTE) and orientation error values
+- Define cost functions
+- Define model constraints
+
+* Libraries
+
+** Ipopt
+- find locally optimal values
+- requires Jacobian and Hessian input
+  - That's why we need =CppAd=
+
+** CppAd
+- Automatic differentiation tool
+- Use =CppAd= namespace
+
+*** Example
+#+BEGIN_SRC C++ :exports code
+  CppAD<double>;     // instead of double
+  CppAD::pow(x, 2);  // instead of std::pow(x, 2)
+#+END_SRC
+
+* Code Structure
+There are two main components in =MPC.cpp=
+
+- =vector<double> MPC::Solve(VectorXd state, VectorXd coeffs)= method
+- =FG_eval= class
+
+** =MPC::Solve= method
+
+- state :: [x, y, psi, v, cte, epsi]
+- coeffs :: Coefficients for the fitting polynomial
+
+The task can be divided into two sub tasks for =Ipopt=
+
+1. Set up variables
+2. Set up vehicle model constraints
+
+*** Set up variables
+=Ipopt= expects all the constraints and variables as vectors.
+Suppose =N= is 5. Then, there are ~5 * 6 = 30~ states ~4 * 2 = 8~ control inputs (total 38).
+
+Also, don't forget the delta is bounded =[-25, 25]=.
+
+#+BEGIN_SRC C++ :exports code
+  for (int i = 0; i < N; ++i) {
+    // states
+    vars[i] = x_i;
+    vars[i + 5] = y_i;
+    vars[i + 10] = psi_i;
+    vars[i + 15] = v_i;
+    vars[i + 20] = cte_i;
+    vars[i + 25] = epsi_i;
+
+    if (i < N - 1) {
+      // control inputs
+      vars[i + 30] = delta_i;
+      vars[i + 34] = a_i;
+    }
+  }
+
+  // Constraints variables
+  for (int i = delta_start, i < a_start, ++i) {
+    vars_lowerbound[i] = -0.436332;  // radian -25
+    vars_upperbound[i] = 0.436332;   // radian 25
+  }
+#+END_SRC
+
+*** Set up model constraints
+
+For example,
+
+$$ x_{t+1} = x_t + v_t \cdot cos(\psi_t) \cdot dt $$
+
+can be written as a constraint like this
+
+$$ x_{t+1} - x_t - v_t \cdot cos(\psi_t) \cdot dt = 0 $$
+
+Also, it means that ~lowerbound = upperbound = 0~
+
+So, in the code
+
+#+BEGIN_SRC C++ :exports code
+  for (int i = 0; i < n_constraints; ++i) {
+    constraints_lowerbound[i] = 0;
+    constraints_upperbound[i] = 0;
+  }
+#+END_SRC
+** FG_eval class
+*** Class Diagram
+#+BEGIN_SRC plantuml :exports results :file images/classdiagram.png :mkdirp yes
+class FG_eval {
+  FG_eval(VectorXd coeffs)
+  operator()()
+}
+#+END_SRC
+
+#+RESULTS:
+[[file:images/classdiagram.png]]
