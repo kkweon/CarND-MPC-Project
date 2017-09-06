@@ -3,4 +3,179 @@
 
 #+HTML: <div align="center"><img src="./images/mpc_project.gif" width="50%" /> <div>Running example</div></div>
 
+
+* Table of Contents                                                :TOC_2_GH:
+- [[#project-description][Project Description]]
+- [[#vehicle-model][Vehicle Model]]
+- [[#timestep-length-and-elapsed-duration-n--dt][Timestep Length and Elapsed Duration (N & dt)]]
+- [[#polynomial-fitting-and-mpc-processing][Polynomial Fitting and MPC Processing]]
+  - [[#convert-global-coordinates-to-local-coordinates][Convert global coordinates to local coordinates]]
+  - [[#find-coefficients-of-the-fitting-polynomial][Find coefficients of the fitting polynomial]]
+  - [[#non-linear-optimization][Non Linear Optimization]]
+- [[#model-predictive-control-with-latency][Model Predictive Control with latency]]
+- [[#build][Build]]
+- [[#project-structure][Project Structure]]
+
 * Project Description
+The purpose of this project is to develop a model predictive controller (MPC) that can control a car in the simulation.
+
+The program communicates with the simulator through websocket.
+The car receives the following data(delayed) to control a vehicle.
+
+- (ptsx, ptsy) :: global positions of the waypoints
+- psi :: orientation of the vehicle in *radians*
+- (x, y) :: global position of the vehicle
+- steering_angle :: current steering angle in *randians*
+- speed :: current velocity of the vehicle
+
+* Vehicle Model
+The vehicle model is a *kinematic bicycle model*.
+
+#+BEGIN_SRC latex :exports results :results raw :file images/vehicle_model.png
+  \begin{align*}
+  x_{t+1}     &= x_{t} + v_{t} \cdot cos(\psi_{t}) \cdot dt             \\
+  y_{t+1}     &= y_{t} + v_{t} \cdot sin(\psi_{t}) \cdot dt             \\
+  \psi_{t+1}  &= \psi_{t} + v_{t} / Lf \cdot \delta_{t} \cdot dt         \\
+  v_{t+1}     &= v_{t} + a_{t} \cdot dt                            \\
+  cte_{t+1}   &= f(x_{t}) - y_{t} + v_{t} \cdot sin(e\psi_{t}) \cdot dt \\
+  e\psi_{t+1} &= \psi_{t} - \psides_{t} + v_{t} \cdot \delta_{t} / Lf \cdot dt
+  \end{align*}
+#+END_SRC
+
+#+RESULTS:
+[[file:images/vehicle_model.png]]
+
+
+- (x, y) :: position of the car
+- psi :: heading orientation
+- v :: velocity
+- cte :: cross track error
+- epsi :: orientation error
+
+* Timestep Length and Elapsed Duration (N & dt)
+
+The predicted time in total is =T = N * dt=.
+In this project, I chose ~N = 12~ and ~dt = 0.05~. So the time predicted was about =0.6= seconds.
+
+Short prediction is more responsive and is also easy to lose stability.
+Long prediction is more smooth in general.
+
+I tried many possible values and found this to work the best.
+Increasing =dt= leads to accurate control, but it increases the latency as well since it takes a longer to solve the problem.
+
+* Polynomial Fitting and MPC Processing
+More information can be found in [[./NOTES.org][here]]. In short, it's 3 simple steps.
+
+** Convert global coordinates to local coordinates
+Received data is in global coordinates. By global, I mean it's like longitude and latitude. We can locate it directly with the global coordinates.
+
+However, this is a little bit complicated to use it for computations from the perspective of the car.
+
+So, it's necessary to *transform* the perspective from global coordinates to the vehicle perspective coordinates.
+
+
+It's simply done as below:
+
+#+BEGIN_SRC C++ :exports code
+  double shift_x = ptsx[i] - px;
+  double shift_y = ptsy[i] - py;
+
+  ptsx[i] = shift_x * cos(psi) + shift_y * sin(psi);
+  ptsy[i] = shift_x * sin(-psi) + shift_y * cos(psi);
+#+END_SRC
+
+** Find coefficients of the fitting polynomial
+Since we have points, we can find a fitting polynomial using =polyfit=.
+
+=polyfit= is defined like this:
+
+#+BEGIN_SRC C++ :exports code
+  Eigen::VectorXd polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals,
+                          int order) {
+    assert(xvals.size() == yvals.size());
+    assert(order >= 1 && order <= xvals.size() - 1);
+    Eigen::MatrixXd A(xvals.size(), order + 1);
+
+    for (int i = 0; i < xvals.size(); i++) {
+      A(i, 0) = 1.0;
+    }
+
+    for (int j = 0; j < xvals.size(); j++) {
+      for (int i = 0; i < order; i++) {
+        A(j, i + 1) = A(j, i) * xvals(j);
+      }
+    }
+
+    auto Q      = A.householderQr();
+    auto result = Q.solve(yvals);
+    return result;
+  }
+#+END_SRC
+
+** Non Linear Optimization
+Now we have a state
+
+#+BEGIN_SRC C++ :exports code
+  Eigen::VectorXd state(6);
+  state << 0, 0, 0, v, cte, epsi;
+#+END_SRC
+
+and coefficients from the above.
+
+From the vehicle model, we can see the constraints and use =IPOPT= library to find optimal steering angle and acceleration.
+
+#+BEGIN_SRC C++ :exports code
+  Solution vars         = mpc.Solve(state, coeffs);
+  double steer_value    = vars.deltas.at(mpc.LATENCY_IND);
+  double throttle_value = vars.accs.at(mpc.LATENCY_IND);
+#+END_SRC
+
+* Model Predictive Control with latency
+Also there is an =100ms= latency in the simulator, and since =100ms = 2 * dt=, first two time steps are not used in the optimization since it will be already in the past.
+So, when I set the lowerbound and upperbound, I simply fix the first two values as constants. So, it does not count toward the optimization.
+
+#+BEGIN_SRC C++ :exports code
+  // Fix previous delta since it's in the past
+  for (size_t i = delta_start; i < delta_start + LATENCY_IND; ++i) {
+    vars_lowerbound[i] = delta_prev;
+    vars_upperbound[i] = delta_prev;
+  }
+
+  for (size_t i = a_start; i < a_start + LATENCY_IND; ++i) {
+    vars_lowerbound[i] = a_prev;
+    vars_upperbound[i] = a_prev;
+  }
+#+END_SRC
+
+* Build
+
+#+BEGIN_SRC bash :exports code
+mkdir build
+cd build
+cmake ..
+make && ./mpc
+#+END_SRC
+
+and run the Udacity SDC simulator.
+
+* Project Structure
+
+There are just 4 files after all.
+
+#+BEGIN_SRC bash :exports results :results output
+tree . -L 2
+#+END_SRC
+
+#+RESULTS:
+#+begin_example
+.
+├── README.org
+└── src
+    ├── Eigen-3.3
+    ├── json.hpp
+    ├── main.cpp
+    ├── MPC.cpp
+    └── MPC.h
+
+8 directories, 27 files
+#+end_example
