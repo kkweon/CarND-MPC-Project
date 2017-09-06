@@ -84,11 +84,21 @@ Also, don't forget the delta is bounded =[-25, 25]=.
 
 For example,
 
-$$ x_{t+1} = x_t + v_t \cdot cos(\psi_t) \cdot dt $$
+#+BEGIN_SRC latex :exports results :results raw :file images/first.png
+$$x_{t+1} = x_t + v_t \cdot cos(\psi_t) \cdot dt$$
+#+END_SRC
+
+#+RESULTS:
+[[file:images/first.png]]
 
 can be written as a constraint like this
 
+#+BEGIN_SRC latex :exports results :results raw :file images/second.png
 $$ x_{t+1} - x_t - v_t \cdot cos(\psi_t) \cdot dt = 0 $$
+#+END_SRC
+
+#+RESULTS:
+[[file:images/second.png]]
 
 Also, it means that ~lowerbound = upperbound = 0~
 
