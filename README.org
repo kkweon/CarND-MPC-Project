@@ -1,0 +1,6 @@
+#+TITLE: Model Predictive Control
+#+AUTHOR: Kyung Mo Kweon
+
+#+HTML: <div align="center"><img src="./images/mpc_project.gif" width="50%" /> <div>Running example</div></div>
+
+* Project Description

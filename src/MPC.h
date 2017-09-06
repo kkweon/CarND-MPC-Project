@@ -6,8 +6,23 @@
 
 using namespace std;
 
+struct Solution {
+  vector<double> xs;
+  vector<double> ys;
+  vector<double> psis;
+  vector<double> vs;
+  vector<double> ctes;
+  vector<double> epsis;
+  vector<double> deltas;
+  vector<double> accs;
+};
+
 class MPC {
  public:
+  double delta_prev = 0;
+  double a_prev = 0.1;
+  const int LATENCY_IND = 2;
+
   MPC();
 
   virtual ~MPC();
@@ -20,7 +35,8 @@ class MPC {
    *
    * @return first actuation
    */
-  vector<double> Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs);
+  Solution Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs);
+
 };
 
 #endif /* MPC_H */

@@ -9,6 +9,9 @@
 #include "MPC.h"
 #include "json.hpp"
 
+#define DEBUG(element, string) \
+  if (1) std::cout << string << ": " << (element) << std::endl
+
 // for convenience
 using json = nlohmann::json;
 
@@ -17,13 +20,15 @@ constexpr double pi() { return M_PI; }
 double deg2rad(double x) { return x * pi() / 180; }
 double rad2deg(double x) { return x * 180 / pi(); }
 
+const int DEGREE = 3;
+
 // Checks if the SocketIO event has JSON data.
 // If there is data the JSON object in string format will be returned,
 // else the empty string "" will be returned.
 string hasData(string s) {
   auto found_null = s.find("null");
-  auto b1 = s.find_first_of("[");
-  auto b2 = s.rfind("}]");
+  auto b1         = s.find_first_of("[");
+  auto b2         = s.rfind("}]");
   if (found_null != string::npos) {
     return "";
   } else if (b1 != string::npos && b2 != string::npos) {
@@ -60,7 +65,7 @@ Eigen::VectorXd polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals,
     }
   }
 
-  auto Q = A.householderQr();
+  auto Q      = A.householderQr();
   auto result = Q.solve(yvals);
   return result;
 }
@@ -71,7 +76,7 @@ int main() {
   // MPC is initialized here!
   MPC mpc;
 
-  h.onMessage([&mpc](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  h.onMessage([&mpc](uWS::WebSocket<uWS::SERVER> ws, char* data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -81,55 +86,76 @@ int main() {
     if (sdata.size() > 2 && sdata[0] == '4' && sdata[1] == '2') {
       string s = hasData(sdata);
       if (s != "") {
-        auto j = json::parse(s);
+        auto j       = json::parse(s);
         string event = j[0].get<string>();
         if (event == "telemetry") {
           // j[1] is the data JSON object
           vector<double> ptsx = j[1]["ptsx"];
           vector<double> ptsy = j[1]["ptsy"];
-          double px = j[1]["x"];
-          double py = j[1]["y"];
-          double psi = j[1]["psi"];
-          double v = j[1]["speed"];
+          double px           = j[1]["x"];
+          double py           = j[1]["y"];
+          double psi          = j[1]["psi"];
+          double v            = j[1]["speed"];
 
-          /*
-          * TODO: Calculate steering angle and throttle using MPC.
-          *
-          * Both are in between [-1, 1].
-          *
-          */
-          double steer_value;
-          double throttle_value;
+          for (unsigned int i = 0; i < ptsx.size(); ++i) {
+            double shift_x = ptsx[i] - px;
+            double shift_y = ptsy[i] - py;
+
+            ptsx[i] = shift_x * cos(psi) + shift_y * sin(psi);
+            ptsy[i] = shift_x * sin(-psi) + shift_y * cos(psi);
+          }
+
+          double* ptrx = &ptsx[0];
+          double* ptry = &ptsy[0];
+
+          Eigen::Map<Eigen::VectorXd> ptsx_transform(ptrx, 6);
+          Eigen::Map<Eigen::VectorXd> ptsy_transform(ptry, 6);
+
+          Eigen::VectorXd coeffs =
+              polyfit(ptsx_transform, ptsy_transform, DEGREE);
+          auto cte  = polyeval(coeffs, 0);
+          auto epsi = -atan(coeffs[1]);
+
+          Eigen::VectorXd state(6);
+          state << 0, 0, 0, v, cte, epsi;
+
+          Solution vars         = mpc.Solve(state, coeffs);
+          double steer_value    = vars.deltas.at(mpc.LATENCY_IND);
+          double throttle_value = vars.accs.at(mpc.LATENCY_IND);
 
           json msgJson;
-          // NOTE: Remember to divide by deg2rad(25) before you send the steering value back.
-          // Otherwise the values will be in between [-deg2rad(25), deg2rad(25] instead of [-1, 1].
-          msgJson["steering_angle"] = steer_value;
+          // NOTE: Remember to divide by deg2rad(25) before you send the
+          // steering value back.
+          // Otherwise the values will be in between [-deg2rad(25), deg2rad(25]
+          // instead of [-1, 1].
+          msgJson["steering_angle"] = -steer_value / deg2rad(25);
           msgJson["throttle"] = throttle_value;
+          msgJson["mpc_x"]    = vars.xs;
+          msgJson["mpc_y"]    = vars.ys;
 
-          //Display the MPC predicted trajectory 
-          vector<double> mpc_x_vals;
-          vector<double> mpc_y_vals;
+          mpc.delta_prev = steer_value;
+          mpc.a_prev     = throttle_value;
 
-          //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
-          // the points in the simulator are connected by a Green line
-
-          msgJson["mpc_x"] = mpc_x_vals;
-          msgJson["mpc_y"] = mpc_y_vals;
-
-          //Display the waypoints/reference line
+          // Display the waypoints/reference line
           vector<double> next_x_vals;
           vector<double> next_y_vals;
 
-          //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
+          for (unsigned int i = 0; i < ptsx.size(); ++i) {
+            next_x_vals.push_back(ptsx_transform[i]);
+            next_y_vals.push_back(ptsy_transform[i]);
+          }
+
+          //.. add (x,y) points to list here, points are in reference to the
+          // vehicle's coordinate system
           // the points in the simulator are connected by a Yellow line
 
           msgJson["next_x"] = next_x_vals;
           msgJson["next_y"] = next_y_vals;
 
-
           auto msg = "42[\"steer\"," + msgJson.dump() + "]";
-          std::cout << msg << std::endl;
+          // std::cout << msg << std::endl;
+          DEBUG(cte, "cte");
+
           // Latency
           // The purpose is to mimic real driving conditions where
           // the car does actuate the commands instantly.
@@ -153,7 +179,7 @@ int main() {
   // We don't need this since we're not using HTTP but if it's removed the
   // program
   // doesn't compile :-(
-  h.onHttpRequest([](uWS::HttpResponse *res, uWS::HttpRequest req, char *data,
+  h.onHttpRequest([](uWS::HttpResponse* res, uWS::HttpRequest req, char* data,
                      size_t, size_t) {
     const std::string s = "<h1>Hello world!</h1>";
     if (req.getUrl().valueLength == 1) {
@@ -169,7 +195,7 @@ int main() {
   });
 
   h.onDisconnection([&h](uWS::WebSocket<uWS::SERVER> ws, int code,
-                         char *message, size_t length) {
+                         char* message, size_t length) {
     ws.close();
     std::cout << "Disconnected" << std::endl;
   });
