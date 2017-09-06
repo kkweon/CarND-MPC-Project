@@ -9,6 +9,7 @@
 - [[#code-structure][Code Structure]]
   - [[#mpcsolve-method][=MPC::Solve= method]]
   - [[#fg_eval-class][FG_eval class]]
+  - [[#summary][Summary]]
 
 * Algorithms
 - Set =N= and =dt=
@@ -85,7 +86,7 @@ Also, don't forget the delta is bounded =[-25, 25]=.
 For example,
 
 #+BEGIN_SRC latex :exports results :results raw :file images/first.png
-$$x_{t+1} = x_t + v_t \cdot cos(\psi_t) \cdot dt$$
+$$ x_{t+1} = x_t + v_t \cdot cos(\psi_t) \cdot dt $$
 #+END_SRC
 
 #+RESULTS:
@@ -114,10 +115,32 @@ So, in the code
 *** Class Diagram
 #+BEGIN_SRC plantuml :exports results :file images/classdiagram.png :mkdirp yes
 class FG_eval {
+  + coeffs : VectorXd
   FG_eval(VectorXd coeffs)
-  operator()()
+  operator()(ADvector& fg, const ADvector& vars)
 }
 #+END_SRC
 
 #+RESULTS:
 [[file:images/classdiagram.png]]
+
+
+- =vars= :: vector of variables defined above
+- =fg= :: vector of constraints
+
+Note that =fg[0]= stores the cost value.
+** Summary
+
+#+BEGIN_SRC C++ :exports code
+  // place to return solution
+  CppAD::ipopt::solve_result<Dvector> solution;
+
+  // solve the problem
+  CppAD::ipopt::solve<Dvector, FG_eval>(options, vars, vars_lowerbound,
+                                        vars_upperbound, constraints_lowerbound,
+                                        constraints_upperbound, fg_eval,
+                                        solution);
+#+END_SRC
+
+- =solution.x= :: contains a solution vector
+- =solution.obj_value= :: is the cost
